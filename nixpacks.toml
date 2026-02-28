@@ -1,6 +1,6 @@
 # nixpacks.toml — tells Railway to install Tesseract OCR system package
 [phases.setup]
-nixPkgs = ["tesseract", "tesseract-data-eng", "libgcc"]
+nixPkgs = ["tesseract", "tesseract-lang", "libgcc"]
 
 [phases.install]
 cmds = ["pip install -r requirements.txt"]
