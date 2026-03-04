@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -326,11 +327,10 @@ hr.win{border:none;border-top:1px solid var(--btn-sh);border-bottom:1px solid va
           </div>
           <div class="mono tm" style="font-size:9px;line-height:1.8;padding-top:2px">
             <b style="color:#000">Get Extension ID:</b><br>
-            1. Open <b>chrome://extensions</b><br>
-            2. Enable <b>Developer Mode</b> (top-right toggle)<br>
-            3. Find <b>PETA Pack Fundraiser Pro</b><br>
-            4. Copy the 32-char ID &rarr; paste above<br>
-            <span style="color:var(--muted)">Or click ⚡ Auto-Detect to try automatically</span>
+            1. chrome://extensions<br>
+            2. Enable Developer Mode<br>
+            3. Find PETA Pack Fundraiser<br>
+            4. Copy ID → paste above
           </div>
         </div>
         <div class="flex g8 fw mb8">
@@ -1129,78 +1129,68 @@ function setExtStatus(msg, state){
   }
 }
 
-// Auto-detect extension ID by trying to ping known/saved IDs
-async function autoDetectExtId(){
-  if(typeof chrome === 'undefined' || !chrome.runtime){
+
+// Auto-detect extension ID by trying saved/known candidate IDs
+function autoDetectExtId(){
+  if(typeof chrome==='undefined'||!chrome.runtime){
     toast('Open this page in Google Chrome first','e');
-    setExtStatus('✗ Auto-detect requires Google Chrome — open this page in Chrome, not another browser','err');
+    setExtStatus('Auto-detect requires Google Chrome - open this page in Chrome','err');
     return;
   }
-  setExtStatus('// Auto-detecting extension ID…','wait');
-  log('Auto-detecting extension ID…');
-
-  // Build candidate list: saved ID first, then any 32-char IDs found in storage
+  setExtStatus('// Auto-detecting extension ID...','wait');
+  log('Auto-detecting extension ID...');
   const candidates = new Set();
   const saved = cfg('ext_id');
   if(saved && saved.length===32) candidates.add(saved);
-
-  // Try to find any previously used IDs from localStorage keys
   try {
     for(let i=0;i<localStorage.length;i++){
       const k=localStorage.key(i);
       if(/^[a-z]{32}$/.test(k)) candidates.add(k);
     }
   } catch(e){}
-
   if(candidates.size===0){
-    setExtStatus('✗ No candidate IDs found. Paste the Extension ID from <b>chrome://extensions</b> and click Connect.','err');
-    log('Auto-detect: no candidate IDs to try','warn');
+    setExtStatus('No candidate IDs found - paste your Extension ID from chrome://extensions','err');
     toast('Paste your Extension ID first','w');
     return;
   }
-
-  for(const id of candidates){
-    try {
-      log('Trying ID: '+id);
-      const resp = await new Promise((res,rej)=>{
-        try {
-          chrome.runtime.sendMessage(id, {type:'PING'}, r=>{
-            if(chrome.runtime.lastError) rej(new Error(chrome.runtime.lastError.message));
-            else res(r);
-          });
-        } catch(e){ rej(e); }
-      });
-      if(resp?.status==='ok'){
-        document.getElementById('ext-id').value = id;
-        setCfg('ext_id', id);
-        extConnected=true;
-        setExtStatus(`<span class="tg">✓ Auto-detected & connected — PETA Pack Extension v${esc(resp.version||'1.0')}</span>`,'ok');
-        log('Auto-detect success: '+id,'accent');
-        toast('Extension auto-detected & connected!','s');
-        startExtPoll();
-        return;
-      }
-    } catch(e){ /* try next */ }
-  }
-
-  setExtStatus('✗ Auto-detect failed — paste the Extension ID from <b>chrome://extensions &rarr; Developer Mode &rarr; copy 32-char ID</b>','err');
-  log('Auto-detect: no matching extension found','error');
-  toast('Auto-detect failed — paste Extension ID manually','e');
+  const tryNext = async (ids) => {
+    for(const id of ids){
+      try {
+        log('Trying ID: '+id);
+        const resp = await new Promise((res,rej)=>{
+          try {
+            chrome.runtime.sendMessage(id,{type:'PING'},r=>{
+              if(chrome.runtime.lastError) rej(new Error(chrome.runtime.lastError.message));
+              else res(r);
+            });
+          } catch(e){ rej(e); }
+        });
+        if(resp && resp.status==='ok'){
+          document.getElementById('ext-id').value=id;
+          setCfg('ext_id',id);
+          extConnected=true;
+          setExtStatus('<span class="tg">Auto-detected and connected - v'+(resp.version||'1.0')+'</span>','ok');
+          log('Auto-detect success: '+id,'accent');
+          toast('Extension auto-detected and connected!','s');
+          startExtPoll();
+          return;
+        }
+      } catch(e){ /* try next */ }
+    }
+    setExtStatus('Auto-detect failed - paste the 32-char ID from chrome://extensions, Developer Mode','err');
+    toast('Auto-detect failed - paste Extension ID manually','e');
+  };
+  tryNext(Array.from(candidates));
 }
 
 async function detectExtension(){
   const extId = getExtId();
-  if(!extId){ setExtStatus('// Enter your Extension ID above, then click Connect','err'); return; }
+  if(!extId){ setExtStatus('// Enter your Extension ID above','err'); return; }
   setExtStatus('// Pinging extension…', 'wait');
   log('Connecting to extension: '+extId);
   try {
-    // ── Environment checks with actionable messages ──────────────
-    if(typeof chrome === 'undefined'){
-      throw new Error('chrome API unavailable — open this page in Google Chrome');
-    }
-    if(!chrome.runtime){
-      throw new Error('chrome.runtime unavailable — open this page in Google Chrome');
-    }
+    if(typeof chrome==='undefined'){ throw new Error('chrome API not found - open this page in Google Chrome'); }
+    if(!chrome.runtime){ throw new Error('chrome.runtime unavailable - open this page in Google Chrome'); }
     const resp = await msgExt(extId, {type:'PING'});
     if(resp?.status==='ok'){
       extConnected=true;
@@ -1208,24 +1198,21 @@ async function detectExtension(){
       log('Extension connected ✓','accent');
       toast('Extension connected!','s');
       startExtPoll();
-    } else {
-      throw new Error('Extension returned unexpected response — try reloading the extension');
-    }
+    } else throw new Error('Bad response');
   } catch(e){
     extConnected=false;
-    let hint = '';
-    const m = e.message || '';
-    if(/Could not establish connection|receiving end does not exist/i.test(m)){
-      hint = ' — Extension not installed or disabled. Go to chrome://extensions, find PETA Pack Fundraiser Pro and enable it.';
-    } else if(/chrome API unavailable|chrome.runtime unavailable/i.test(m)){
-      hint = ' — Open this page in Google Chrome (not Firefox/Safari/Edge).';
-    } else if(/Invalid extension id|invalid.*id/i.test(m)){
-      hint = ' — The Extension ID looks wrong. Go to chrome://extensions > Developer Mode > copy the 32-char ID.';
-    } else {
-      hint = ' — Check the Extension ID and that the extension is installed & enabled at chrome://extensions.';
-    }
-    setExtStatus(`<span class="tr">✗ ${esc(m)}</span>${hint}`,'err');
-    log('Extension connect failed: '+m,'error');
+    let _hint='';
+    const _m=e.message||'';
+    if(/Could not establish connection|receiving end does not exist/i.test(_m))
+      _hint=' - Extension not installed or disabled. Enable it at chrome://extensions';
+    else if(/chrome API not found|chrome.runtime unavailable/i.test(_m))
+      _hint=' - Open this page in Google Chrome (not Firefox/Safari/Edge)';
+    else if(/Invalid extension id/i.test(_m))
+      _hint=' - Wrong Extension ID - go to chrome://extensions, Developer Mode, copy 32-char ID';
+    else
+      _hint=' - Check the Extension ID and that the extension is installed and enabled';
+    setExtStatus(`<span class="tr">✗ ${esc(_m)}</span>${_hint}`,'err');
+    log('Extension connect failed: '+e.message,'error');
   }
 }
 
@@ -1397,30 +1384,17 @@ function startExtPoll(){
 // Wrap chrome.runtime.sendMessage in a promise
 function msgExt(extId, msg){
   return new Promise((resolve,reject)=>{
-    if(typeof chrome==='undefined'){
-      reject(new Error('Open this page in Google Chrome to use the extension bridge'));
-      return;
-    }
-    if(!chrome.runtime || !chrome.runtime.sendMessage){
-      reject(new Error('chrome.runtime.sendMessage not available — open in Chrome'));
-      return;
-    }
-    if(!extId || extId.length !== 32){
-      reject(new Error('Invalid Extension ID — must be 32 lowercase letters (from chrome://extensions)'));
+    if(typeof chrome==='undefined'||!chrome.runtime){ reject(new Error('Chrome extension APIs not available')); return; }
+    if(!extId||extId.length!==32){
+      reject(new Error('Invalid Extension ID - must be 32 lowercase letters from chrome://extensions'));
       return;
     }
     try {
       chrome.runtime.sendMessage(extId, msg, resp=>{
-        if(chrome.runtime.lastError){
-          const err = chrome.runtime.lastError.message || 'Unknown error';
-          reject(new Error(err));
-        } else {
-          resolve(resp);
-        }
+        if(chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+        else resolve(resp);
       });
-    } catch(e) {
-      reject(e);
-    }
+    } catch(e){ reject(e); }
   });
 }
 
@@ -6706,7 +6680,7 @@ const EmbeddedBrowser = {
     this._updateRecordBar(false);
     AutoPoster.log('⏸ Recording paused', 'w');
     const extId = ExtSync.id;
-    if (extId) msgExt(extId, { type: 'AP_PAUSE_RECORD' }).catch(()=>{});
+    if (extId) msgExt(extId, { type: 'AP_PAUSE_RECORD', tabId: this.activeTab }).catch(()=>{});
   },
 
   async saveWorkflow() {
@@ -6817,6 +6791,12 @@ const EmbeddedBrowser = {
     document.getElementById('ap-browser-site-url').textContent = site.url;
     this._renderSteps();
     this._updateRecordBar(false);
+    // Auto-open site in tab if extension is already connected
+    if (ExtSync.connected && ExtSync.id && site.url) {
+      this.openSite(siteId, site.url);
+    } else {
+      this._updateFrame('Connect extension first (Extension Bridge tab), then click Train again');
+    }
     this._updateFrame(`⏳ Opening ${site.url}… recording will start automatically`);
     this.openSite(siteId, site.url);
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -7716,6 +7696,16 @@ const AutoPoster = {
       const body  = useSpin ? spintax(post.body  || '') : (post.body  || '');
       this.log(`  ▶ "${title.slice(0, 45)}" → ${s.name}${acct ? ' · ' + acct.u : ' · guest'}`, 'i');
       try {
+        // Normalize step format (WorkflowEditor uses selectors[]+value; replay needs selector+text)
+        if (wf && wf.steps) {
+          wf = JSON.parse(JSON.stringify(wf));
+          wf.steps = wf.steps.map(s => ({
+            ...s,
+            action: s.action === 'fill' ? 'type' : (s.action || 'type'),
+            selector: s.selector || (Array.isArray(s.selectors) ? s.selectors[0] : '') || '',
+            text: s.text !== undefined ? s.text : (s.value || '')
+          }));
+        }
         const r = await ExtSync.send({
           type: 'AP_REPLAY_WORKFLOW',
           workflow: wf,
@@ -7887,7 +7877,7 @@ const AutoPoster = {
     const extId = ExtSync.id;
     if (!extId) { toast('Connect extension first', 'w'); return; }
     try {
-      const r = await ExtSync.send({ type: 'WORKFLOW_LOAD' }, 3);
+      const r = await ExtSync.send({ type: 'AP_LOAD_WORKFLOWS' }, 3);
       const wfs = r?.workflows || {}; let matched = 0;
       Object.entries(wfs).forEach(([key, wf]) => {
         let wh = ''; try { wh = new URL(wf.startUrl || '').hostname; } catch(e) {}
@@ -8124,7 +8114,7 @@ const AutoPoster = {
       const extId = ExtSync.id;
       if (!extId) return;
       try {
-        const r = await ExtSync.send({ type: 'WORKFLOW_LOAD' }, 2);
+        const r = await ExtSync.send({ type: 'AP_LOAD_WORKFLOWS' }, 2);
         const wfs = r?.workflows || {};
         const site = this.sites.find(s => s.id === sid);
         let shost = ''; try { shost = new URL(site?.url || '').hostname; } catch(e) {}
